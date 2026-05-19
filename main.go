@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"strings"
 )
 
 func main() {
@@ -29,50 +28,22 @@ func main() {
 
 func handleConn(conn net.Conn) {
 	defer conn.Close()
-	scanner := bufio.NewScanner(conn)
-	for scanner.Scan() {
-		line := scanner.Text()
 
-		if line == "" {
-			continue
+	r := bufio.NewReader(conn)
+
+	for {
+		parts, err := readCommand(r)
+
+		if err != nil {
+			return
 		}
 
-		parts := strings.Fields(line)
 		if len(parts) == 0 {
 			continue
 		}
 
 		response := dispatch(parts)
 		conn.Write([]byte(response))
-
-	}
-	if err := scanner.Err(); err != nil {
-		log.Printf("scanner error: %v", err)
 	}
 
-}
-
-func dispatch(parts []string) string {
-
-	cmd := strings.ToUpper(parts[0])
-	args := parts[1:]
-
-	switch cmd {
-	case "PING" :
-		if len(args) == 0 {
-			return "+PONG\r\n"
-		}
-		// PING with a message echose the message as a bulk string
-		msg := args[0]
-		return fmt.Sprintf("$%d\r\n%s\r\n", len(msg), msg)
-
-	case "ECHO": 
-		if len(args) == 0 {
-			return "-ERR wrong number of arguments for 'echo' command\r\n"
-		}
-		msg := args[0]
-		return fmt.Sprintf("$%d\r\n%s\r\n", len(msg), msg)
-	default:
-		return fmt.Sprintf("-ERR unknown command '%s'\r\n", parts[0])
-	}
 }
