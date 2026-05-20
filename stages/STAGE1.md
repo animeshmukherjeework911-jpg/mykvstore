@@ -1,4 +1,3 @@
----
 # Stage 1 — Project setup + TCP echo server
 
 In this stage you bootstrap the Go module and write the first working server: a raw TCP echo server listening on port 6379 (the Redis default). Every byte sent to the server is echoed back. This verifies your network plumbing before you add any protocol logic.

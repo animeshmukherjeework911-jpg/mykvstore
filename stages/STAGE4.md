@@ -1,4 +1,3 @@
----
 # Stage 4 — In-memory store: SET, GET, DEL
 
 Now that the protocol layer is solid, you can add the actual key-value store. In this stage you create a `Store` struct backed by a `map[string]string` and protect it with a `sync.RWMutex` so multiple client goroutines can safely read and write concurrently. You implement `SET`, `GET`, and `DEL`.

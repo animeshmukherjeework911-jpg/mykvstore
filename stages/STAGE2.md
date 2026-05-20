@@ -1,4 +1,3 @@
----
 # Stage 2 — RESP protocol: parse inline commands
 
 The raw echo server from Stage 1 has no concept of commands. In this stage you add the first layer of the Redis Serialization Protocol (RESP): inline commands. An inline command is a single line of space-separated text ending in `\r\n`. You will parse `PING` and respond with `+PONG\r\n`, which is the first thing `redis-cli` sends when it connects.

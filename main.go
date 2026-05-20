@@ -8,6 +8,7 @@ import (
 )
 
 func main() {
+	store := NewStore()
 	ln, err := net.Listen("tcp", ":6379")
 	if err != nil {
 		log.Fatalf("failed to bind: %v", err)
@@ -21,12 +22,12 @@ func main() {
 			log.Printf("accept error: %v", err)
 			continue
 		}
-		go handleConn(conn)
+		go handleConn(conn, store)
 
 	}
 }
 
-func handleConn(conn net.Conn) {
+func handleConn(conn net.Conn, store *Store) {
 	defer conn.Close()
 
 	r := bufio.NewReader(conn)
@@ -42,7 +43,7 @@ func handleConn(conn net.Conn) {
 			continue
 		}
 
-		response := dispatch(parts)
+		response := dispatch(parts, store)
 		conn.Write([]byte(response))
 	}
 

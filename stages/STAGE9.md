@@ -1,4 +1,3 @@
----
 # Stage 9 — RDB snapshot: periodic binary dump
 
 The AOF grows indefinitely and replaying thousands of commands on startup is slow. In this stage you add RDB (Redis Database) snapshots: a periodic background goroutine encodes the entire store to a binary file using `encoding/gob`. On startup you load the RDB first (fast) and then replay only the AOF commands written after the snapshot (the delta). This is the snapshot + WAL (Write-Ahead Log) pattern used by many databases.

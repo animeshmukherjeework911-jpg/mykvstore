@@ -1,4 +1,3 @@
----
 # Stage 8 — Persistence: Append-Only File (AOF)
 
 So far the server loses all data on restart. In this stage you add an Append-Only File (AOF): every write command is appended to `aof.log` as a RESP-encoded string, and on startup the file is replayed to restore state. This is the same persistence strategy Redis uses in its `appendonly yes` mode.

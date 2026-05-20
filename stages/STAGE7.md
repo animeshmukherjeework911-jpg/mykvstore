@@ -1,4 +1,3 @@
----
 # Stage 7 — List data structure: LPUSH, RPUSH, LPOP, RPOP, LRANGE
 
 Redis is not just a string store — it supports multiple data types. In this stage you add list support: a separate map in `Store` holds `[]string` slices, and you implement the five core list commands. You also learn how Go slices behave as a deque and how to handle the type mismatch error when a string key and a list key collide.

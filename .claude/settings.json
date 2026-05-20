@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /home/ani/personal/mykvstore remote -v)",
+      "Bash(git -C /home/ani/personal/mykvstore log --pretty=format:\"%ae\")"
+    ]
+  }
+}

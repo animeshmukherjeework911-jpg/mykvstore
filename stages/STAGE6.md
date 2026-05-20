@@ -1,4 +1,3 @@
----
 # Stage 6 — More commands: EXISTS, KEYS, INCR, APPEND
 
 In this stage you round out the string command set. `EXISTS` checks key presence, `KEYS` lists keys matching a glob pattern, `INCR` treats a value as an integer and increments it atomically, and `APPEND` concatenates a suffix to an existing value. Together these cover the most common operations Redis applications use beyond bare GET/SET.

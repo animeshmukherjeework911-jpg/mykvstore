@@ -1,4 +1,3 @@
----
 # Stage 3 — Full RESP parser: arrays and bulk strings
 
 `redis-cli` does not send inline commands by default. It sends RESP arrays of bulk strings — the full wire format that every Redis client uses. In this stage you replace the `bufio.Scanner` line reader with a proper RESP parser that can handle the array format, and you add a RESP encoder for all response types. After this stage, `redis-cli` can connect and `PING` successfully.

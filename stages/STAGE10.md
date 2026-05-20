@@ -1,4 +1,3 @@
----
 # Stage 10 — Pub/Sub: SUBSCRIBE, PUBLISH
 
 In this final stage you implement the Redis Pub/Sub messaging model. Clients can subscribe to named channels and receive messages published by other clients. This requires a fundamentally different connection model: a subscribed connection stops being a request-response client and becomes a long-lived listener. You will use Go channels as in-process message queues and goroutines for fan-out.

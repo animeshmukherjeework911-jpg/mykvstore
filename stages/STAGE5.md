@@ -1,4 +1,3 @@
----
 # Stage 5 — TTL and EXPIRE: time-based expiry
 
 Redis is famous for its ability to automatically expire keys. In this stage you add expiry support: a second map stores the deadline for each key, `GET` checks whether the deadline has passed and returns null if so, and you implement the `EXPIRE`, `TTL`, and `PERSIST` commands. You also add the `EX` and `PX` options to `SET`.
