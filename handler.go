@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 )
 
 func dispatch(parts []string, store *Store) string {
@@ -28,7 +30,35 @@ func dispatch(parts []string, store *Store) string {
 		if len(args) < 2 {
 			return encodeError("wrong number of arguments for 'set' command")
 		}
-		store.Set(args[0], args[1])
+		key, value := args[0], args[1]
+		opts := args[2:]
+
+		var ttl time.Duration
+
+		for i := 0; i < len(opts)-1; i++ {
+			switch strings.ToUpper(opts[i]) {
+			case "EX":
+				n, err := strconv.Atoi(opts[i+1])
+				if err != nil || n <= 0 {
+					return encodeError("invalid expire time in 'set' command")
+				}
+				ttl = time.Duration(n) * time.Second
+				i++ // skip the consumed value token
+			case "PX":
+				n, err := strconv.Atoi(opts[i+1])
+				if err != nil || n <= 0 {
+					return encodeError("invalid expire time in 'set' command")
+				}
+				ttl = time.Duration(n) * time.Millisecond
+				i++ // skip the consumed value token
+			}
+		}
+		if ttl > 0 {
+			store.SetWithTTL(key, value, ttl)
+		} else {
+			store.Set(args[0], args[1])
+		}
+
 		return encodeSimpleString("OK")
 
 	case "GET":
@@ -52,6 +82,37 @@ func dispatch(parts []string, store *Store) string {
 			}
 		}
 		return encodeInteger(deleted)
+
+	case "EXPIRE":
+		if len(args) != 2 {
+			return encodeError("wrong number of arguments for 'expire' command")
+		}
+		n, err := strconv.Atoi(args[1])
+		if err != nil {
+			return encodeError("value is not an integer or out of range")
+		}
+		if store.Expire(args[0], time.Duration(n)*time.Second) {
+			return encodeInteger(1)
+		}
+		return encodeInteger(0)
+
+	case "TTL":
+		if len(args) != 1 {
+			return encodeError("wrong number of arguments for 'ttl' command")
+		}
+		d := store.TTL(args[0])
+		// Truncation to integer seconds is intentional (Redis TTL contract).
+		// Sentinel durations (-1s, -2s) convert exactly to -1, -2.
+		return encodeInteger(int64(d.Seconds()))
+
+	case "PERSIST":
+		if len(args) != 1 {
+			return encodeError("wrong number of arguments for 'persist' command")
+		}
+		if store.Persist(args[0]) {
+			return encodeInteger(1)
+		}
+		return encodeInteger(0)
 
 	case "COMMAND":
 		// redis-cli sends COMMAND DOCS on startup; return an empty array

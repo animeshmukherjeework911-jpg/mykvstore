@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"time"
 )
 
 func main() {
@@ -15,6 +16,15 @@ func main() {
 	}
 	defer ln.Close()
 	fmt.Println("mykvstore listening on :6379")
+
+	// 100ms is a balance between eviction latency and lock contention on the store.
+	go func() {
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for range ticker.C {
+			store.evictExpired()
+		}
+	}()
 
 	for {
 		conn, err := ln.Accept()
