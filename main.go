@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"log"
 	"net"
@@ -9,13 +10,17 @@ import (
 )
 
 func main() {
+	port := flag.String("port", "6379", "TCP port to listen on")
+	flag.Parse()
+
 	store := NewStore()
-	ln, err := net.Listen("tcp", ":6379")
+	addr := ":" + *port
+	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Fatalf("failed to bind: %v", err)
 	}
 	defer ln.Close()
-	fmt.Println("mykvstore listening on :6379")
+	fmt.Printf("mykvstore listening on %s\n", addr)
 
 	// 100ms is a balance between eviction latency and lock contention on the store.
 	go func() {

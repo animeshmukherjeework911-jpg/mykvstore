@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -14,7 +16,7 @@ type Store struct {
 
 func NewStore() *Store {
 	return &Store{
-		data: make(map[string]string),
+		data:    make(map[string]string),
 		expires: make(map[string]time.Time),
 	}
 }
@@ -146,4 +148,98 @@ func (s *Store) evictExpired() {
 			delete(s.expires, key)
 		}
 	}
+}
+
+func (s *Store) Exists(key string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if s.isExpiredLocked(key) {
+		return false
+	}
+	_, ok := s.data[key]
+	return ok
+}
+
+func (s *Store) Keys(pattern string) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var result []string
+	for key := range s.data {
+		if s.isExpiredLocked(key) {
+			continue
+		}
+		if matchGlob(pattern, key) {
+			result = append(result, key)
+		}
+	}
+	return result
+}
+
+func matchGlob(pattern, key string) bool {
+	// Fast paths
+
+	if pattern == "*" {
+		return true
+	}
+
+	if !strings.Contains(pattern, "*") {
+		return pattern == key
+	}
+
+	parts := strings.Split(pattern, "*")
+	pos := 0
+
+	for i, part := range parts {
+		if part == "" {
+			continue
+		}
+
+		idx := strings.Index(key[pos:], part)
+		if idx == -1 {
+			return false
+		}
+
+		// The first segment must be a prefix match
+		if i == 0 && idx != 0 {
+			return false
+		}
+
+		pos += idx + len(part)
+	}
+
+	if !strings.HasSuffix(pattern, "*") {
+		last := parts[len(parts)-1]
+
+		if last != "" && !strings.HasSuffix(key, last) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (s *Store) Incr(key string, delta int64) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var current int64
+	if val, ok := s.data[key]; ok {
+		var err error
+		current, err = strconv.ParseInt(val, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("value is not an integer or out of range")
+		}
+	}
+	next := current + delta
+	s.data[key] = strconv.FormatInt(next, 10)
+	return next, nil
+}
+
+func (s *Store) Append(key, suffix string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.data[key] = s.data[key] + suffix
+	return len(s.data[key])
 }

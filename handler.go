@@ -114,6 +114,77 @@ func dispatch(parts []string, store *Store) string {
 		}
 		return encodeInteger(0)
 
+	case "EXISTS":
+		if len(args) == 0 {
+			return encodeError("wrong number of arguments for 'exists' command")
+		}
+		var count int64
+		for _, key := range args {
+			if store.Exists(key) {
+				count++
+			}
+		}
+		return encodeInteger(count)
+
+	case "KEYS":
+		if len(args) != 1 {
+			return encodeError("wrong number of arguments for 'keys' command")
+		}
+		keys := store.Keys(args[0])
+		return encodeArray(keys)
+
+	case "INCR":
+		if len(args) != 1 {
+			return encodeError("wrong number of arguments for 'incr' command")
+		}
+		n, err := store.Incr(args[0], 1)
+		if err != nil {
+			return encodeError(err.Error())
+		}
+		return encodeInteger(n)
+
+	case "INCRBY":
+		if len(args) != 2 {
+			return encodeError("wrong number of arguments for 'incrby' command")
+		}
+		delta, err := strconv.ParseInt(args[1], 10, 64)
+		if err != nil {
+			return encodeError("value is not an integer or out of range")
+		}
+		n, err := store.Incr(args[0], delta)
+		if err != nil {
+			return encodeError(err.Error())
+		}
+		return encodeInteger(n)
+	case "DECR":
+		if len(args) != 1 {
+			return encodeError("wrong number of arguments for 'incr' command")
+		}
+		n, err := store.Incr(args[0], -1)
+		if err != nil {
+			return encodeError(err.Error())
+		}
+		return encodeInteger(n)
+
+	case "DECRBY":
+		if len(args) != 2 {
+			return encodeError("wrong number of arguments for 'incrby' command")
+		}
+		delta, err := strconv.ParseInt(args[1], 10, 64)
+		if err != nil {
+			return encodeError("value is not an integer or out of range")
+		}
+		n, err := store.Incr(args[0], -delta)
+		if err != nil {
+			return encodeError(err.Error())
+		}
+		return encodeInteger(n)
+	case "APPEND":
+		if len(args) != 2 {
+			return encodeError("wrong number of arguments for 'append' command")
+		}
+		n := store.Append(args[0], args[1])
+		return encodeInteger(int64(n))
 	case "COMMAND":
 		// redis-cli sends COMMAND DOCS on startup; return an empty array
 		return "*0\r\n"
