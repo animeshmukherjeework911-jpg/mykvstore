@@ -1,13 +1,13 @@
-package main
+package store_test
 
 import (
 	"testing"
 	"time"
+
+	"mykvstore/internal/store"
 )
 
-// helpers
-
-func newStore() *Store { return NewStore() }
+func newStore() *store.Store { return store.NewStore() }
 
 // Stage 4 — SET / GET / DEL
 

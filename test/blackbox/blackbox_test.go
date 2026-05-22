@@ -3,7 +3,7 @@
 // TestMain builds the server binary, starts it on port 6399 (to avoid
 // colliding with a real Redis on 6379), runs all tests, then shuts it down.
 //
-// Run from the test/ directory:
+// Run from the test/blackbox directory:
 //   go test -v ./...
 package blackbox_test
 
@@ -25,14 +25,14 @@ const serverBin = "/tmp/mykvstore_test_bin"
 var ctx = context.Background()
 
 func TestMain(m *testing.M) {
-	// Resolve the parent directory (the main mykvstore module).
+	// Resolve the project root (two levels up from test/blackbox/).
 	wd, err := os.Getwd()
 	if err != nil {
 		panic("getwd: " + err.Error())
 	}
-	serverSrc := filepath.Dir(wd)
+	serverSrc := filepath.Dir(filepath.Dir(wd))
 
-	// Build the server binary from the parent directory.
+	// Build the server binary from the project root.
 	build := exec.Command("go", "build", "-o", serverBin, ".")
 	build.Dir = serverSrc
 	build.Stdout = os.Stderr
@@ -99,7 +99,7 @@ func flush(t *testing.T, rdb *redis.Client) {
 
 // Stage 3 — PING / ECHO
 
-func TestPing(t *testing.T) {
+func TestPing_Stage3(t *testing.T) {
 	rdb := newClient(t)
 	got, err := rdb.Ping(ctx).Result()
 	if err != nil || got != "PONG" {
@@ -107,7 +107,7 @@ func TestPing(t *testing.T) {
 	}
 }
 
-func TestPingWithMessage(t *testing.T) {
+func TestPingWithMessage_Stage3(t *testing.T) {
 	rdb := newClient(t)
 	got, err := rdb.Do(ctx, "PING", "hello").Text()
 	if err != nil || got != "hello" {
@@ -115,7 +115,7 @@ func TestPingWithMessage(t *testing.T) {
 	}
 }
 
-func TestEcho(t *testing.T) {
+func TestEcho_Stage3(t *testing.T) {
 	rdb := newClient(t)
 	got, err := rdb.Echo(ctx, "hello world").Result()
 	if err != nil || got != "hello world" {
@@ -123,7 +123,7 @@ func TestEcho(t *testing.T) {
 	}
 }
 
-func TestUnknownCommand(t *testing.T) {
+func TestUnknownCommand_Stage3(t *testing.T) {
 	rdb := newClient(t)
 	err := rdb.Do(ctx, "NOSUCHCMD").Err()
 	if err == nil {
@@ -133,7 +133,7 @@ func TestUnknownCommand(t *testing.T) {
 
 // Stage 4 — SET / GET / DEL
 
-func TestSetGet(t *testing.T) {
+func TestSetGet_Stage4(t *testing.T) {
 	rdb := newClient(t)
 	flush(t, rdb)
 
@@ -146,7 +146,7 @@ func TestSetGet(t *testing.T) {
 	}
 }
 
-func TestGetMissing(t *testing.T) {
+func TestGetMissing_Stage4(t *testing.T) {
 	rdb := newClient(t)
 	flush(t, rdb)
 
@@ -156,7 +156,7 @@ func TestGetMissing(t *testing.T) {
 	}
 }
 
-func TestDelExisting(t *testing.T) {
+func TestDelExisting_Stage4(t *testing.T) {
 	rdb := newClient(t)
 	flush(t, rdb)
 
@@ -167,7 +167,7 @@ func TestDelExisting(t *testing.T) {
 	}
 }
 
-func TestDelAlreadyGone(t *testing.T) {
+func TestDelAlreadyGone_Stage4(t *testing.T) {
 	rdb := newClient(t)
 	flush(t, rdb)
 
@@ -179,7 +179,7 @@ func TestDelAlreadyGone(t *testing.T) {
 	}
 }
 
-func TestDelMultiKey(t *testing.T) {
+func TestDelMultiKey_Stage4(t *testing.T) {
 	rdb := newClient(t)
 	flush(t, rdb)
 
@@ -194,7 +194,7 @@ func TestDelMultiKey(t *testing.T) {
 
 // Stage 5 — TTL / EXPIRE / PERSIST
 
-func TestSetWithEX(t *testing.T) {
+func TestSetWithEX_Stage5(t *testing.T) {
 	rdb := newClient(t)
 	flush(t, rdb)
 
@@ -205,7 +205,7 @@ func TestSetWithEX(t *testing.T) {
 	}
 }
 
-func TestTTLPositive(t *testing.T) {
+func TestTTLPositive_Stage5(t *testing.T) {
 	rdb := newClient(t)
 	flush(t, rdb)
 
@@ -216,7 +216,7 @@ func TestTTLPositive(t *testing.T) {
 	}
 }
 
-func TestTTLNoExpiry(t *testing.T) {
+func TestTTLNoExpiry_Stage5(t *testing.T) {
 	rdb := newClient(t)
 	flush(t, rdb)
 
@@ -228,7 +228,7 @@ func TestTTLNoExpiry(t *testing.T) {
 	}
 }
 
-func TestTTLMissingKey(t *testing.T) {
+func TestTTLMissingKey_Stage5(t *testing.T) {
 	rdb := newClient(t)
 	flush(t, rdb)
 
@@ -239,7 +239,7 @@ func TestTTLMissingKey(t *testing.T) {
 	}
 }
 
-func TestExpireAndWait(t *testing.T) {
+func TestExpireAndWait_Stage5(t *testing.T) {
 	rdb := newClient(t)
 	flush(t, rdb)
 
@@ -253,7 +253,7 @@ func TestExpireAndWait(t *testing.T) {
 	}
 }
 
-func TestExpireNonexistent(t *testing.T) {
+func TestExpireNonexistent_Stage5(t *testing.T) {
 	rdb := newClient(t)
 	flush(t, rdb)
 
@@ -263,7 +263,7 @@ func TestExpireNonexistent(t *testing.T) {
 	}
 }
 
-func TestPersist(t *testing.T) {
+func TestPersist_Stage5(t *testing.T) {
 	rdb := newClient(t)
 	flush(t, rdb)
 
@@ -281,7 +281,7 @@ func TestPersist(t *testing.T) {
 
 // Stage 6 — EXISTS / KEYS / INCR / APPEND
 
-func TestExistsPresent(t *testing.T) {
+func TestExistsPresent_Stage6(t *testing.T) {
 	rdb := newClient(t)
 	flush(t, rdb)
 
@@ -292,7 +292,7 @@ func TestExistsPresent(t *testing.T) {
 	}
 }
 
-func TestExistsMissing(t *testing.T) {
+func TestExistsMissing_Stage6(t *testing.T) {
 	rdb := newClient(t)
 	flush(t, rdb)
 
@@ -302,7 +302,7 @@ func TestExistsMissing(t *testing.T) {
 	}
 }
 
-func TestExistsDuplicateKey(t *testing.T) {
+func TestExistsDuplicateKey_Stage6(t *testing.T) {
 	rdb := newClient(t)
 	flush(t, rdb)
 
@@ -314,7 +314,7 @@ func TestExistsDuplicateKey(t *testing.T) {
 	}
 }
 
-func TestKeysPattern(t *testing.T) {
+func TestKeysPattern_Stage6(t *testing.T) {
 	rdb := newClient(t)
 	flush(t, rdb)
 
@@ -328,7 +328,7 @@ func TestKeysPattern(t *testing.T) {
 	}
 }
 
-func TestKeysStar(t *testing.T) {
+func TestKeysStar_Stage6(t *testing.T) {
 	rdb := newClient(t)
 	flush(t, rdb)
 
@@ -341,7 +341,7 @@ func TestKeysStar(t *testing.T) {
 	}
 }
 
-func TestIncrMissingKey(t *testing.T) {
+func TestIncrMissingKey_Stage6(t *testing.T) {
 	rdb := newClient(t)
 	flush(t, rdb)
 
@@ -351,7 +351,7 @@ func TestIncrMissingKey(t *testing.T) {
 	}
 }
 
-func TestIncrExisting(t *testing.T) {
+func TestIncrExisting_Stage6(t *testing.T) {
 	rdb := newClient(t)
 	flush(t, rdb)
 
@@ -362,7 +362,7 @@ func TestIncrExisting(t *testing.T) {
 	}
 }
 
-func TestIncrBy(t *testing.T) {
+func TestIncrBy_Stage6(t *testing.T) {
 	rdb := newClient(t)
 	flush(t, rdb)
 
@@ -373,7 +373,7 @@ func TestIncrBy(t *testing.T) {
 	}
 }
 
-func TestDecr(t *testing.T) {
+func TestDecr_Stage6(t *testing.T) {
 	rdb := newClient(t)
 	flush(t, rdb)
 
@@ -384,7 +384,7 @@ func TestDecr(t *testing.T) {
 	}
 }
 
-func TestIncrNonInteger(t *testing.T) {
+func TestIncrNonInteger_Stage6(t *testing.T) {
 	rdb := newClient(t)
 	flush(t, rdb)
 
@@ -395,7 +395,7 @@ func TestIncrNonInteger(t *testing.T) {
 	}
 }
 
-func TestAppend(t *testing.T) {
+func TestAppend_Stage6(t *testing.T) {
 	rdb := newClient(t)
 	flush(t, rdb)
 

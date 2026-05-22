@@ -1,4 +1,4 @@
-package main
+package store
 
 import (
 	"fmt"
@@ -135,9 +135,9 @@ func (s *Store) String() string {
 	return fmt.Sprintf("Store(%d keys)", len(s.data))
 }
 
-// evictExpired is the active (proactive) side of expiry; Get is the lazy side.
+// EvictExpired is the active (proactive) side of expiry; Get is the lazy side.
 // Together they ensure expired keys are neither returned nor held indefinitely.
-func (s *Store) evictExpired() {
+func (s *Store) EvictExpired() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -178,8 +178,6 @@ func (s *Store) Keys(pattern string) []string {
 }
 
 func matchGlob(pattern, key string) bool {
-	// Fast paths
-
 	if pattern == "*" {
 		return true
 	}

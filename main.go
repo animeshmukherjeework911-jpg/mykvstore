@@ -7,13 +7,17 @@ import (
 	"log"
 	"net"
 	"time"
+
+	"mykvstore/internal/handler"
+	"mykvstore/internal/resp"
+	"mykvstore/internal/store"
 )
 
 func main() {
 	port := flag.String("port", "6379", "TCP port to listen on")
 	flag.Parse()
 
-	store := NewStore()
+	s := store.NewStore()
 	addr := ":" + *port
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -27,7 +31,7 @@ func main() {
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
 		for range ticker.C {
-			store.evictExpired()
+			s.EvictExpired()
 		}
 	}()
 
@@ -37,29 +41,22 @@ func main() {
 			log.Printf("accept error: %v", err)
 			continue
 		}
-		go handleConn(conn, store)
-
+		go handleConn(conn, s)
 	}
 }
 
-func handleConn(conn net.Conn, store *Store) {
+func handleConn(conn net.Conn, s *store.Store) {
 	defer conn.Close()
-
 	r := bufio.NewReader(conn)
 
 	for {
-		parts, err := readCommand(r)
-
+		parts, err := resp.ReadCommand(r)
 		if err != nil {
 			return
 		}
-
 		if len(parts) == 0 {
 			continue
 		}
-
-		response := dispatch(parts, store)
-		conn.Write([]byte(response))
+		conn.Write([]byte(handler.Dispatch(parts, s)))
 	}
-
 }
