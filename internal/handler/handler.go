@@ -10,6 +10,35 @@ import (
 	"mykvstore/internal/store"
 )
 
+func wrongArgs(cmd string) string {
+	return resp.EncodeError(fmt.Sprintf("wrong number of arguments for '%s' command", cmd))
+}
+
+func boolReply(b bool) string {
+	if b {
+		return resp.EncodeInteger(1)
+	}
+	return resp.EncodeInteger(0)
+}
+
+func incrBy(args []string, cmd string, s *store.Store) string {
+	if len(args) != 2 {
+		return wrongArgs(cmd)
+	}
+	delta, err := strconv.ParseInt(args[1], 10, 64)
+	if err != nil {
+		return resp.EncodeError("value is not an integer or out of range")
+	}
+	if cmd == "decrby" {
+		delta = -delta
+	}
+	n, err := s.Incr(args[0], delta)
+	if err != nil {
+		return resp.EncodeError(err.Error())
+	}
+	return resp.EncodeInteger(n)
+}
+
 func Dispatch(parts []string, s *store.Store) string {
 	cmd := strings.ToUpper(parts[0])
 	args := parts[1:]
@@ -23,13 +52,13 @@ func Dispatch(parts []string, s *store.Store) string {
 
 	case "ECHO":
 		if len(args) == 0 {
-			return resp.EncodeError("wrong number of arguments for 'echo' command")
+			return wrongArgs("echo")
 		}
 		return resp.EncodeBulkString(args[0])
 
 	case "SET":
 		if len(args) < 2 {
-			return resp.EncodeError("wrong number of arguments for 'set' command")
+			return wrongArgs("set")
 		}
 		key, value := args[0], args[1]
 		opts := args[2:]
@@ -62,7 +91,7 @@ func Dispatch(parts []string, s *store.Store) string {
 
 	case "GET":
 		if len(args) != 1 {
-			return resp.EncodeError("wrong number of arguments for 'get' command")
+			return wrongArgs("get")
 		}
 		val, ok := s.Get(args[0])
 		if !ok {
@@ -72,7 +101,7 @@ func Dispatch(parts []string, s *store.Store) string {
 
 	case "DEL":
 		if len(args) == 0 {
-			return resp.EncodeError("wrong number of arguments for 'del' command")
+			return wrongArgs("del")
 		}
 		var deleted int64
 		for _, key := range args {
@@ -84,36 +113,29 @@ func Dispatch(parts []string, s *store.Store) string {
 
 	case "EXPIRE":
 		if len(args) != 2 {
-			return resp.EncodeError("wrong number of arguments for 'expire' command")
+			return wrongArgs("expire")
 		}
 		n, err := strconv.Atoi(args[1])
 		if err != nil {
 			return resp.EncodeError("value is not an integer or out of range")
 		}
-		if s.Expire(args[0], time.Duration(n)*time.Second) {
-			return resp.EncodeInteger(1)
-		}
-		return resp.EncodeInteger(0)
+		return boolReply(s.Expire(args[0], time.Duration(n)*time.Second))
 
 	case "TTL":
 		if len(args) != 1 {
-			return resp.EncodeError("wrong number of arguments for 'ttl' command")
+			return wrongArgs("ttl")
 		}
-		d := s.TTL(args[0])
-		return resp.EncodeInteger(int64(d.Seconds()))
+		return resp.EncodeInteger(int64(s.TTL(args[0]).Seconds()))
 
 	case "PERSIST":
 		if len(args) != 1 {
-			return resp.EncodeError("wrong number of arguments for 'persist' command")
+			return wrongArgs("persist")
 		}
-		if s.Persist(args[0]) {
-			return resp.EncodeInteger(1)
-		}
-		return resp.EncodeInteger(0)
+		return boolReply(s.Persist(args[0]))
 
 	case "EXISTS":
 		if len(args) == 0 {
-			return resp.EncodeError("wrong number of arguments for 'exists' command")
+			return wrongArgs("exists")
 		}
 		var count int64
 		for _, key := range args {
@@ -125,13 +147,13 @@ func Dispatch(parts []string, s *store.Store) string {
 
 	case "KEYS":
 		if len(args) != 1 {
-			return resp.EncodeError("wrong number of arguments for 'keys' command")
+			return wrongArgs("keys")
 		}
 		return resp.EncodeArray(s.Keys(args[0]))
 
 	case "INCR":
 		if len(args) != 1 {
-			return resp.EncodeError("wrong number of arguments for 'incr' command")
+			return wrongArgs("incr")
 		}
 		n, err := s.Incr(args[0], 1)
 		if err != nil {
@@ -139,23 +161,9 @@ func Dispatch(parts []string, s *store.Store) string {
 		}
 		return resp.EncodeInteger(n)
 
-	case "INCRBY":
-		if len(args) != 2 {
-			return resp.EncodeError("wrong number of arguments for 'incrby' command")
-		}
-		delta, err := strconv.ParseInt(args[1], 10, 64)
-		if err != nil {
-			return resp.EncodeError("value is not an integer or out of range")
-		}
-		n, err := s.Incr(args[0], delta)
-		if err != nil {
-			return resp.EncodeError(err.Error())
-		}
-		return resp.EncodeInteger(n)
-
 	case "DECR":
 		if len(args) != 1 {
-			return resp.EncodeError("wrong number of arguments for 'decr' command")
+			return wrongArgs("decr")
 		}
 		n, err := s.Incr(args[0], -1)
 		if err != nil {
@@ -163,26 +171,17 @@ func Dispatch(parts []string, s *store.Store) string {
 		}
 		return resp.EncodeInteger(n)
 
+	case "INCRBY":
+		return incrBy(args, "incrby", s)
+
 	case "DECRBY":
-		if len(args) != 2 {
-			return resp.EncodeError("wrong number of arguments for 'decrby' command")
-		}
-		delta, err := strconv.ParseInt(args[1], 10, 64)
-		if err != nil {
-			return resp.EncodeError("value is not an integer or out of range")
-		}
-		n, err := s.Incr(args[0], -delta)
-		if err != nil {
-			return resp.EncodeError(err.Error())
-		}
-		return resp.EncodeInteger(n)
+		return incrBy(args, "decrby", s)
 
 	case "APPEND":
 		if len(args) != 2 {
-			return resp.EncodeError("wrong number of arguments for 'append' command")
+			return wrongArgs("append")
 		}
-		n := s.Append(args[0], args[1])
-		return resp.EncodeInteger(int64(n))
+		return resp.EncodeInteger(int64(s.Append(args[0], args[1])))
 
 	case "COMMAND":
 		return "*0\r\n"
