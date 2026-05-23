@@ -12,13 +12,145 @@ type Store struct {
 	mu      sync.RWMutex
 	data    map[string]string
 	expires map[string]time.Time
+	lists   map[string][]string
 }
 
 func NewStore() *Store {
 	return &Store{
 		data:    make(map[string]string),
 		expires: make(map[string]time.Time),
+		lists:   make(map[string][]string),
 	}
+}
+
+const wrongTypeErr = "WRONGTYPE Operation against a key holding the wrong kind of value"
+
+// LPush prepends one or more values to the list at key.
+// Returns the new length of the list after the push
+// Returns an error string if the key holds a non-List value
+func (s *Store) LPush(key string, values ...string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, isString := s.data[key]; isString {
+		return 0, fmt.Errorf(wrongTypeErr)
+	}
+
+	for _, v := range values {
+		s.lists[key] = append([]string{v}, s.lists[key]...)
+	}
+
+	return len(s.lists[key]), nil
+}
+
+// RPush appends one or more values to the list at key
+// Returns the new length of the list.
+
+func (s *Store) RPush(key string, values ...string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, isString := s.data[key]; isString {
+		return 0, fmt.Errorf(wrongTypeErr)
+	}
+
+	s.lists[key] = append(s.lists[key], values...)
+	return len(s.lists[key]), nil
+}
+
+// LPop removes and returns the first element of the list
+// Returns ("", false) if the list is empty or does not exist
+
+func (s *Store) LPop(key string) (string, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, isString := s.data[key]; isString {
+		return "", false, fmt.Errorf(wrongTypeErr)
+	}
+	list, ok := s.lists[key]
+
+	if !ok || len(list) == 0 {
+		return "", false, nil
+	}
+
+	val := list[0]
+	s.lists[key] = list[1:]
+	if len(s.lists[key]) == 0 {
+		delete(s.lists, key)
+	}
+	return val, true, nil
+}
+
+// RPop removes and returns the last element of the list
+func (s *Store) RPop(key string) (string, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, isString := s.data[key]; isString {
+		return "", false, fmt.Errorf(wrongTypeErr)
+	}
+
+	list, ok := s.lists[key]
+	if !ok || len(list) == 0 {
+		return "", false, nil
+	}
+
+	n := len(list)
+	val := list[n-1]
+	s.lists[key] = list[:n-1]
+	if len(s.lists[key]) == 0 {
+		delete(s.lists, key)
+	}
+	return val, true, nil
+}
+
+// LLen returns the length of the list at key.
+func (s *Store) LLen(key string) (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if _, isString := s.data[key]; isString {
+		return 0, fmt.Errorf(wrongTypeErr)
+	}
+	return len(s.lists[key]), nil
+}
+
+// LRange returns the elements of the list between start and stop (inclusive)
+// Negative indices count from the end; -1 is the last element.
+func (s *Store) LRange(key string, start, stop int) ([]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if _, isString := s.data[key]; isString {
+		return nil, fmt.Errorf(wrongTypeErr)
+	}
+	list := s.lists[key]
+	n := len(list)
+	if n == 0 {
+		return []string{}, nil
+	}
+
+	// Resolved negative indices
+	if start < 0 {
+		start = n + start
+	} 
+	if stop < 0 {
+		stop = n + stop 
+	}
+
+	if start < 0 {
+		start = 0
+	}
+	if stop >= n {
+		stop = n - 1
+	}
+
+	if start > stop {
+		return []string{}, nil
+	}
+
+	result := make([]string, stop-start+1)
+	copy(result, list[start:stop+1])
+	return result, nil 
 }
 
 // isExpiredLocked checks expiry. Must be called with at least RLock held
@@ -60,12 +192,16 @@ func (s *Store) Get(key string) (string, bool) {
 func (s *Store) Del(key string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, ok := s.data[key]
-	if ok {
+	_, inData := s.data[key]
+	_, inLists := s.lists[key]
+	if inData {
 		delete(s.data, key)
 		delete(s.expires, key)
 	}
-	return ok
+	if inLists {
+		delete(s.lists, key)
+	}
+	return inData || inLists
 }
 
 func (s *Store) Expire(key string, ttl time.Duration) bool {
@@ -170,6 +306,11 @@ func (s *Store) Keys(pattern string) []string {
 		if s.isExpiredLocked(key) {
 			continue
 		}
+		if matchGlob(pattern, key) {
+			result = append(result, key)
+		}
+	}
+	for key := range s.lists {
 		if matchGlob(pattern, key) {
 			result = append(result, key)
 		}

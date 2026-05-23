@@ -274,6 +274,90 @@ func TestAppendMissingKey(t *testing.T) {
 	}
 }
 
+// Stage 7 — LPUSH / RPUSH / LPOP / RPOP / LLEN / LRANGE
+
+func TestRPushReturnsLength(t *testing.T) {
+	s := newStore()
+	n, err := s.RPush("k", "a", "b", "c")
+	if err != nil || n != 3 {
+		t.Fatalf("expected 3, got %d err=%v", n, err)
+	}
+}
+
+func TestLPushPrependsInOrder(t *testing.T) {
+	s := newStore()
+	s.RPush("k", "a", "b", "c")
+	s.LPush("k", "z")
+	items, _ := s.LRange("k", 0, -1)
+	if items[0] != "z" || len(items) != 4 {
+		t.Fatalf("expected [z a b c], got %v", items)
+	}
+}
+
+func TestLPopRemovesFirst(t *testing.T) {
+	s := newStore()
+	s.RPush("k", "a", "b", "c")
+	val, ok, err := s.LPop("k")
+	if err != nil || !ok || val != "a" {
+		t.Fatalf("expected a, got %q ok=%v err=%v", val, ok, err)
+	}
+}
+
+func TestRPopRemovesLast(t *testing.T) {
+	s := newStore()
+	s.RPush("k", "a", "b", "c")
+	val, ok, err := s.RPop("k")
+	if err != nil || !ok || val != "c" {
+		t.Fatalf("expected c, got %q ok=%v err=%v", val, ok, err)
+	}
+}
+
+func TestLPopEmptyList(t *testing.T) {
+	s := newStore()
+	_, ok, err := s.LPop("nosuchkey")
+	if err != nil || ok {
+		t.Fatalf("expected (false, nil) for missing key, got ok=%v err=%v", ok, err)
+	}
+}
+
+func TestLRangeNegativeIndex(t *testing.T) {
+	s := newStore()
+	s.RPush("k", "a", "b", "c")
+	items, err := s.LRange("k", 0, -1)
+	if err != nil || len(items) != 3 || items[2] != "c" {
+		t.Fatalf("LRANGE 0 -1: expected [a b c], got %v err=%v", items, err)
+	}
+}
+
+func TestLLen(t *testing.T) {
+	s := newStore()
+	s.RPush("k", "a", "b", "c")
+	s.LPop("k")
+	n, err := s.LLen("k")
+	if err != nil || n != 2 {
+		t.Fatalf("expected 2, got %d err=%v", n, err)
+	}
+}
+
+func TestLPopDeletesKeyWhenEmpty(t *testing.T) {
+	s := newStore()
+	s.RPush("k", "a")
+	s.LPop("k")
+	n, _ := s.LLen("k")
+	if n != 0 {
+		t.Fatalf("expected empty list after popping last element, got len %d", n)
+	}
+}
+
+func TestWrongTypeError(t *testing.T) {
+	s := newStore()
+	s.Set("strkey", "hello")
+	_, err := s.LPush("strkey", "x")
+	if err == nil {
+		t.Fatal("expected WRONGTYPE error for LPush on string key")
+	}
+}
+
 // Concurrent access — run with go test -race
 
 func TestConcurrentSetGet(t *testing.T) {

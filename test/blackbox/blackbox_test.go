@@ -409,3 +409,107 @@ func TestAppend_Stage6(t *testing.T) {
 		t.Fatalf("APPEND result: want 'Hello, World', got %q", got)
 	}
 }
+
+// Stage 7 — LPUSH / RPUSH / LPOP / RPOP / LLEN / LRANGE
+
+func TestRPush_Stage7(t *testing.T) {
+	rdb := newClient(t)
+	flush(t, rdb)
+
+	n, err := rdb.RPush(ctx, "mylist", "a", "b", "c").Result()
+	if err != nil || n != 3 {
+		t.Fatalf("RPUSH: want 3, got %d err=%v", n, err)
+	}
+}
+
+func TestLRangeAll_Stage7(t *testing.T) {
+	rdb := newClient(t)
+	flush(t, rdb)
+
+	rdb.RPush(ctx, "mylist", "a", "b", "c")
+	items, err := rdb.LRange(ctx, "mylist", 0, -1).Result()
+	if err != nil || len(items) != 3 || items[0] != "a" || items[2] != "c" {
+		t.Fatalf("LRANGE 0 -1: want [a b c], got %v err=%v", items, err)
+	}
+}
+
+func TestLPush_Stage7(t *testing.T) {
+	rdb := newClient(t)
+	flush(t, rdb)
+
+	rdb.RPush(ctx, "mylist", "a", "b", "c")
+	n, err := rdb.LPush(ctx, "mylist", "z").Result()
+	if err != nil || n != 4 {
+		t.Fatalf("LPUSH: want 4, got %d err=%v", n, err)
+	}
+	items, _ := rdb.LRange(ctx, "mylist", 0, -1).Result()
+	if items[0] != "z" {
+		t.Fatalf("LPUSH: want z at head, got %v", items)
+	}
+}
+
+func TestLPop_Stage7(t *testing.T) {
+	rdb := newClient(t)
+	flush(t, rdb)
+
+	rdb.RPush(ctx, "mylist", "a", "b", "c")
+	val, err := rdb.LPop(ctx, "mylist").Result()
+	if err != nil || val != "a" {
+		t.Fatalf("LPOP: want a, got %q err=%v", val, err)
+	}
+}
+
+func TestRPop_Stage7(t *testing.T) {
+	rdb := newClient(t)
+	flush(t, rdb)
+
+	rdb.RPush(ctx, "mylist", "a", "b", "c")
+	val, err := rdb.RPop(ctx, "mylist").Result()
+	if err != nil || val != "c" {
+		t.Fatalf("RPOP: want c, got %q err=%v", val, err)
+	}
+}
+
+func TestLLen_Stage7(t *testing.T) {
+	rdb := newClient(t)
+	flush(t, rdb)
+
+	rdb.RPush(ctx, "mylist", "a", "b", "c")
+	rdb.LPop(ctx, "mylist")
+	n, err := rdb.LLen(ctx, "mylist").Result()
+	if err != nil || n != 2 {
+		t.Fatalf("LLEN: want 2, got %d err=%v", n, err)
+	}
+}
+
+func TestLRangeNegativeIndex_Stage7(t *testing.T) {
+	rdb := newClient(t)
+	flush(t, rdb)
+
+	rdb.RPush(ctx, "mylist", "a", "b", "c")
+	items, err := rdb.LRange(ctx, "mylist", 0, 0).Result()
+	if err != nil || len(items) != 1 || items[0] != "a" {
+		t.Fatalf("LRANGE 0 0: want [a], got %v err=%v", items, err)
+	}
+}
+
+func TestLPopEmpty_Stage7(t *testing.T) {
+	rdb := newClient(t)
+	flush(t, rdb)
+
+	err := rdb.LPop(ctx, "nosuchlist").Err()
+	if err != redis.Nil {
+		t.Fatalf("LPOP empty: want redis.Nil, got %v", err)
+	}
+}
+
+func TestWrongType_Stage7(t *testing.T) {
+	rdb := newClient(t)
+	flush(t, rdb)
+
+	rdb.Set(ctx, "strkey", "hello", 0)
+	err := rdb.LPush(ctx, "strkey", "x").Err()
+	if err == nil {
+		t.Fatal("LPUSH on string key: expected WRONGTYPE error")
+	}
+}

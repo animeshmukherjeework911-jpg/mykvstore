@@ -183,6 +183,82 @@ func Dispatch(parts []string, s *store.Store) string {
 		}
 		return resp.EncodeInteger(int64(s.Append(args[0], args[1])))
 
+	case "LPUSH":
+		if len(args) < 2 {
+			return wrongArgs("lpush")
+		}
+		n, err := s.LPush(args[0], args[1:]...)
+
+		if err != nil {
+			return "-" + err.Error() + "\r\n"
+		}
+		return resp.EncodeInteger(int64(n))
+
+	case "RPUSH":
+		if len(args) < 2 {
+			return wrongArgs("rpush")
+		}
+		n, err := s.RPush(args[0], args[1:]...)
+
+		if err != nil {
+			return "-" + err.Error() + "\r\n"
+		}
+		return resp.EncodeInteger(int64(n))
+
+	case "LPOP":
+		if len(args) != 1 {
+			return wrongArgs("lpop")
+		}
+		val, ok, err := s.LPop(args[0])
+		if err != nil {
+			return resp.EncodeError(err.Error())
+		}
+		if !ok {
+			return resp.EncodeNull()
+		}
+		return resp.EncodeBulkString(val)
+
+	case "RPOP":
+		if len(args) != 1 {
+			return wrongArgs("rpop")
+		}
+		val, ok, err := s.RPop(args[0])
+		if err != nil {
+			return resp.EncodeError(err.Error())
+		}
+		if !ok {
+			return resp.EncodeNull()
+		}
+		return resp.EncodeBulkString(val)
+
+	case "LLEN":
+		if len(args) != 1 {
+			return wrongArgs("llen")
+		}
+
+		n, err := s.LLen(args[0])
+		if err != nil {
+			return "-" + err.Error() + "\r\n"
+		}
+		return resp.EncodeInteger(int64(n))
+
+	case "LRANGE":
+		if len(args) != 3 {
+			return wrongArgs("lrange")
+		}
+		start, err1 := strconv.Atoi(args[1])
+		stop, err2 := strconv.Atoi(args[2])
+
+		if err1 != nil || err2 != nil {
+			return resp.EncodeError("value is not an integer or out of range")
+		}
+
+		items, err := s.LRange(args[0], start, stop)
+		if err != nil {
+			return "-" + err.Error() + "\r\n"
+		}
+		return resp.EncodeArray(items)
+
 	case "COMMAND":
 		return "*0\r\n"
 
