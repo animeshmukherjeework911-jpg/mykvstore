@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strings"
 	"time"
 
+	"mykvstore/internal/aof"
 	"mykvstore/internal/handler"
 	"mykvstore/internal/resp"
 	"mykvstore/internal/store"
@@ -17,7 +19,17 @@ func main() {
 	port := flag.String("port", "6379", "TCP port to listen on")
 	flag.Parse()
 
+	aof, err := aof.OpenAOF(aof.AOF_PATH)
+	if err != nil {
+		log.Fatalf("failed to open AOF: %v", err)
+	}
+	defer aof.Close()
+
 	s := store.NewStore()
+	if err := aof.Replay(s); err != nil {
+		log.Fatalf("AOF replay failed: %v", err)
+	}
+
 	addr := ":" + *port
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -41,11 +53,11 @@ func main() {
 			log.Printf("accept error: %v", err)
 			continue
 		}
-		go handleConn(conn, s)
+		go handleConn(conn, s, aof)
 	}
 }
 
-func handleConn(conn net.Conn, s *store.Store) {
+func handleConn(conn net.Conn, s *store.Store, aof *aof.AOF) {
 	defer conn.Close()
 	r := bufio.NewReader(conn)
 
@@ -57,6 +69,24 @@ func handleConn(conn net.Conn, s *store.Store) {
 		if len(parts) == 0 {
 			continue
 		}
-		conn.Write([]byte(handler.Dispatch(parts, s)))
+
+		response := handler.Dispatch(parts, s)
+		conn.Write([]byte(response))
+
+		if isWriteCommand(parts[0]) {
+			aof.Write(parts)
+		}
 	}
+}
+
+// isWriteCommand returns true for commands that mutate state and must be written to the AOF
+func isWriteCommand(cmd string) bool {
+	switch strings.ToUpper(cmd) {
+	case "SET", "DEL", "EXPIRE", "PERSIST",
+		"INCR", "INCRBY", "DECR", "DECRBY",
+		"APPEND",
+		"LPUSH", "RPUSH", "LPOP", "RPOP":
+		return true
+	}
+	return false
 }
