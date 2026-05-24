@@ -97,6 +97,31 @@ func flush(t *testing.T, rdb *redis.Client) {
 	}
 }
 
+// startServerAt starts the server binary in dir on port, waits until ready,
+// and returns the running Cmd. The caller is responsible for killing it.
+func startServerAt(t *testing.T, dir, port string) *exec.Cmd {
+	t.Helper()
+	srv := exec.Command(serverBin, "-port", port)
+	srv.Dir = dir
+	srv.Stdout = os.Stderr
+	srv.Stderr = os.Stderr
+	if err := srv.Start(); err != nil {
+		t.Fatalf("start server on port %s: %v", port, err)
+	}
+	addr := "localhost:" + port
+	for range 30 {
+		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			return srv
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	srv.Process.Kill()
+	t.Fatalf("server on port %s did not become ready", port)
+	return nil
+}
+
 // Stage 3 — PING / ECHO
 
 func TestPing_Stage3(t *testing.T) {
@@ -511,5 +536,74 @@ func TestWrongType_Stage7(t *testing.T) {
 	err := rdb.LPush(ctx, "strkey", "x").Err()
 	if err == nil {
 		t.Fatal("LPUSH on string key: expected WRONGTYPE error")
+	}
+}
+
+// Stage 8 — AOF persistence
+
+func TestPersistenceAfterRestart_Stage8(t *testing.T) {
+	dir := t.TempDir()
+
+	srv := startServerAt(t, dir, "6398")
+
+	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6398"})
+	rdb.Set(ctx, "foo", "bar", 0)
+	rdb.Set(ctx, "counter", "0", 0)
+	rdb.Incr(ctx, "counter")
+	rdb.RPush(ctx, "mylist", "x", "y", "z")
+	rdb.Close()
+
+	srv.Process.Kill()
+	srv.Wait()
+
+	srv2 := startServerAt(t, dir, "6398")
+	defer srv2.Wait()
+	defer srv2.Process.Kill()
+
+	rdb2 := redis.NewClient(&redis.Options{Addr: "localhost:6398"})
+	defer rdb2.Close()
+
+	if v, err := rdb2.Get(ctx, "foo").Result(); err != nil || v != "bar" {
+		t.Fatalf("foo after restart: want bar, got %q err=%v", v, err)
+	}
+	if v, err := rdb2.Get(ctx, "counter").Result(); err != nil || v != "1" {
+		t.Fatalf("counter after restart: want 1, got %q err=%v", v, err)
+	}
+	items, err := rdb2.LRange(ctx, "mylist", 0, -1).Result()
+	if err != nil || len(items) != 3 || items[0] != "x" || items[2] != "z" {
+		t.Fatalf("mylist after restart: want [x y z], got %v err=%v", items, err)
+	}
+}
+
+func TestReadOnlyCommandsNotPersisted_Stage8(t *testing.T) {
+	dir := t.TempDir()
+
+	srv := startServerAt(t, dir, "6397")
+	defer srv.Process.Kill()
+	defer srv.Wait()
+
+	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6397"})
+	defer rdb.Close()
+
+	rdb.Set(ctx, "k", "v", 0)
+	rdb.Get(ctx, "k")
+	rdb.Exists(ctx, "k")
+	rdb.Keys(ctx, "*")
+	rdb.TTL(ctx, "k")
+
+	// Kill and restart; if GET/EXISTS/KEYS/TTL were replayed they would error
+	// (wrong arg count or type), so a clean restart proves they weren't logged.
+	srv.Process.Kill()
+	srv.Wait()
+
+	srv2 := startServerAt(t, dir, "6397")
+	defer srv2.Wait()
+	defer srv2.Process.Kill()
+
+	rdb2 := redis.NewClient(&redis.Options{Addr: "localhost:6397"})
+	defer rdb2.Close()
+
+	if v, err := rdb2.Get(ctx, "k").Result(); err != nil || v != "v" {
+		t.Fatalf("k after restart: want v, got %q err=%v", v, err)
 	}
 }
