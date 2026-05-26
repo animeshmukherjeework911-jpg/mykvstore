@@ -4,6 +4,14 @@ In this final stage you implement the Redis Pub/Sub messaging model. Clients can
 
 ---
 
+## Implementation Status — NOT STARTED
+
+No Pub/Sub code exists in the codebase. Stage 9 (RDB) must be completed first.
+
+When implementing, note that the project now uses the `internal/` package structure. The `PubSub` type described below should go in `internal/pubsub/pubsub.go` (package `pubsub`), and the `handleSubscribe` logic should live in `internal/handler/handler.go` or a new `internal/handler/subscribe.go`. The `Dispatch` function signature will need to accept a `*pubsub.PubSub` parameter (and `net.Conn` for the SUBSCRIBE handoff).
+
+---
+
 ## Sub-step A — Understand the Pub/Sub model
 
 In Redis Pub/Sub:

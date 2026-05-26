@@ -4,6 +4,24 @@
 
 ---
 
+## Implementation Status — COMPLETE
+
+The RESP parser and encoders live in `internal/resp/resp.go` (package `resp`), not in `package main` as described in the code snippets below. All functions are exported:
+
+| Stage description | Actual implementation |
+|---|---|
+| `readCommand(r)` in `package main` | `resp.ReadCommand(r)` in `internal/resp/resp.go` |
+| `encodeSimpleString(s)` | `resp.EncodeSimpleString(s)` |
+| `encodeBulkString(s)` | `resp.EncodeBulkString(s)` |
+| `encodeError(msg)` | `resp.EncodeError(msg)` |
+| `encodeInteger(n)` | `resp.EncodeInteger(n)` |
+| `encodeNull()` | `resp.EncodeNull()` |
+| `encodeArray(items)` | `resp.EncodeArray(items)` |
+
+The logic and signatures are otherwise identical to what is documented below.
+
+---
+
 ## Sub-step A — Understand the RESP array format
 
 A `SET foo bar` command sent by `redis-cli` arrives as:

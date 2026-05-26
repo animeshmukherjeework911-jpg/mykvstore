@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"mykvstore/internal/rdb"
 	"mykvstore/internal/resp"
 	"mykvstore/internal/store"
 )
@@ -39,7 +40,7 @@ func incrBy(args []string, cmd string, s *store.Store) string {
 	return resp.EncodeInteger(n)
 }
 
-func Dispatch(parts []string, s *store.Store) string {
+func Dispatch(parts []string, s *store.Store, saver *rdb.RDBSaver) string {
 	cmd := strings.ToUpper(parts[0])
 	args := parts[1:]
 
@@ -258,6 +259,19 @@ func Dispatch(parts []string, s *store.Store) string {
 			return "-" + err.Error() + "\r\n"
 		}
 		return resp.EncodeArray(items)
+
+	case "BGSAVE":
+		if saver != nil {
+			saver.Trigger()
+			return resp.EncodeSimpleString("Background saving started")
+		}
+		return resp.EncodeError("background save disabled")
+
+	case "LASTSAVE":
+		if saver != nil {
+			return resp.EncodeInteger(saver.LastSave().Unix())
+		}
+		return resp.EncodeError("background save disabled")
 
 	case "COMMAND":
 		return "*0\r\n"

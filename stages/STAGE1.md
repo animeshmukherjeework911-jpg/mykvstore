@@ -4,6 +4,14 @@ In this stage you bootstrap the Go module and write the first working server: a 
 
 ---
 
+## Implementation Status — SUPERSEDED
+
+This stage has been superseded by subsequent stages. The current `main.go` is the result of stages 1–8 combined. It no longer echoes raw bytes — it parses RESP, dispatches commands, and persists to AOF.
+
+Notable addition beyond this stage: `main.go` now accepts a `--port` flag (default `"6379"`) so the server can listen on an alternate port without recompiling.
+
+---
+
 ## Sub-step A — Initialize the module
 
 Create the project directory and initialize the Go module.

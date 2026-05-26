@@ -4,6 +4,22 @@ Redis is famous for its ability to automatically expire keys. In this stage you 
 
 ---
 
+## Implementation Status — COMPLETE
+
+All TTL and expiry logic lives in `internal/store/store.go` and `internal/handler/handler.go`.
+
+Key differences from the stage description:
+
+| Stage description | Actual implementation |
+|---|---|
+| `evictExpired()` (unexported) | `EvictExpired()` (exported) in `internal/store/store.go` |
+| `store.evictExpired()` in background goroutine | `s.EvictExpired()` called from ticker in `main.go` |
+| All code in `package main` | Code split across `internal/store` and `internal/handler` |
+
+The active eviction goroutine runs every 100ms. The 100ms interval is a balance between eviction latency and lock contention, as noted in `main.go`.
+
+---
+
 ## Sub-step A — Lazy expiry vs active expiry
 
 There are two approaches to expiring keys:
@@ -157,16 +173,16 @@ go func() {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for range ticker.C {
-		store.evictExpired()
+		store.EvictExpired()
 	}
 }()
 ```
 
-Add `evictExpired` to `store.go`:
+Add `EvictExpired` to `store.go`:
 
 ```go
-// evictExpired deletes all expired keys. Called by the background goroutine.
-func (s *Store) evictExpired() {
+// EvictExpired deletes all expired keys. Called by the background goroutine.
+func (s *Store) EvictExpired() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now()

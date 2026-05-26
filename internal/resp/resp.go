@@ -44,7 +44,7 @@ func readArray(r *bufio.Reader) ([]string, error) {
 
 	count, err := strconv.Atoi(strings.TrimRight(line, "\r\n"))
 	if err != nil {
-		return nil, fmt.Errorf("invalid array length: %d", err)
+		return nil, fmt.Errorf("invalid array length: %w", err)
 	}
 
 	parts := make([]string, 0, count)
@@ -98,7 +98,7 @@ func EncodeSimpleString(s string) string {
 
 // EncodeError encodes msg as a RESP error (-ERR <msg>\r\n).
 func EncodeError(msg string) string {
-	return "-ERR" + msg + "\r\n"
+	return "-ERR " + msg + "\r\n"
 }
 
 // EncodeInteger encodes n as a RESP integer (:<n>\r\n).

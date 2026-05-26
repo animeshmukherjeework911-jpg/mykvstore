@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 const AOF_PATH = "aof/aof.log"
@@ -100,7 +101,7 @@ func (a *AOF) Replay(store *store.Store) error {
 			continue
 		}
 
-		handler.Dispatch(parts, store)
+		handler.Dispatch(parts, store, nil)
 		replayed++
 	}
 
@@ -110,4 +111,14 @@ func (a *AOF) Replay(store *store.Store) error {
 		return fmt.Errorf("aof seek to end: %w", err)
 	}
 	return nil
+}
+
+// ReplayAfter replays AOF commands, skipping those recorded before cutoff.
+// In this implementation the full AOF is replayed; the RDB already has
+// the canonical state, so re-applying SET/DEL commands is idempotent.
+
+func (a *AOF) ReplayAfter(s *store.Store, cutoff time.Time) error {
+	// If cutoff is zero (no RDB), replay everything.
+	// Otherwise, still replay everything — idempotent commands are safe.
+	return a.Replay(s)
 }

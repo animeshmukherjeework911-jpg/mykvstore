@@ -4,6 +4,25 @@ So far the server loses all data on restart. In this stage you add an Append-Onl
 
 ---
 
+## Implementation Status — COMPLETE
+
+The AOF lives in `internal/aof/aof.go` (package `aof`), not in `package main`.
+
+Key differences from the stage description:
+
+| Stage description | Actual implementation |
+|---|---|
+| `const aofPath = "aof.log"` | `const AOF_PATH = "aof/aof.log"` (in a subdirectory) |
+| `OpenAOF` opens a flat file | `OpenAOF` calls `os.MkdirAll` to create the `aof/` directory first |
+| `aof.Replay(store *Store)` | `aof.Replay(store *store.Store)` — takes the imported package type |
+| `ReplayAfter(store, cutoff)` method shown in Stage 9 | Not implemented — only `Replay` exists; Stage 9 uses the same `Replay` |
+| `isWriteCommand` in `handler.go` | `isWriteCommand` in `main.go` |
+| All code in `package main` | AOF code in `internal/aof`, referenced via import in `main.go` |
+
+The `AOF_PATH` constant is exported (uppercase) and the file path uses a subdirectory (`aof/aof.log`) so the AOF file is grouped separately from the binary.
+
+---
+
 ## Sub-step A — How AOF works
 
 Every time a mutating command succeeds (SET, DEL, LPUSH, etc.) you write the exact RESP encoding of that command to a file opened with `O_APPEND`. Because appends to a file are atomic at the OS level up to a certain size, you never get partial writes interleaved between goroutines.
@@ -235,7 +254,7 @@ redis-cli -p 6379 RPUSH mylist x y z
 Inspect the AOF:
 
 ```bash
-cat aof.log
+cat aof/aof.log
 ```
 
 You should see raw RESP for each write command.

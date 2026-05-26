@@ -4,6 +4,14 @@ In this stage you round out the string command set. `EXISTS` checks key presence
 
 ---
 
+## Implementation Status — COMPLETE
+
+All commands are implemented in `internal/store/store.go` (store methods) and `internal/handler/handler.go` (dispatch cases).
+
+Additional detail not in the stage description: the actual `Keys()` method in `store.go` also scans the `lists` map (not just `data`), so list keys are included in `KEYS` results. The stage description only mentions scanning string keys.
+
+---
+
 ## Sub-step A — EXISTS
 
 `EXISTS` in Redis accepts one or more keys and returns the count of keys that exist. A key repeated N times is counted N times.

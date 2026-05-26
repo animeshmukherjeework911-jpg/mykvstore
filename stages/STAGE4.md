@@ -4,6 +4,22 @@ Now that the protocol layer is solid, you can add the actual key-value store. In
 
 ---
 
+## Implementation Status — COMPLETE
+
+The store and handler are split into two separate packages rather than files in `package main`:
+
+| Stage description | Actual implementation |
+|---|---|
+| `store.go` in `package main` | `internal/store/store.go` (package `store`) |
+| `handler.go` with `dispatch(parts, store)` | `internal/handler/handler.go` with `handler.Dispatch(parts, s)` |
+| `main.go` imports nothing | `main.go` imports `mykvstore/internal/store` and `mykvstore/internal/handler` |
+
+The `Store` type, `NewStore()`, `Set`, `Get`, `Del`, `Len`, `String` methods are identical in logic to what is documented below, but live in `package store`.
+
+`dispatch` is named `Dispatch` (exported) and lives in `package handler`.
+
+---
+
 ## Sub-step A — Understand sync.RWMutex
 
 Go maps are not safe for concurrent use. Two goroutines writing simultaneously, or one writing while another reads, causes a data race that can corrupt the map or crash the process. You need a mutex.

@@ -132,9 +132,9 @@ func (s *Store) LRange(key string, start, stop int) ([]string, error) {
 	// Resolved negative indices
 	if start < 0 {
 		start = n + start
-	} 
+	}
 	if stop < 0 {
-		stop = n + stop 
+		stop = n + stop
 	}
 
 	if start < 0 {
@@ -150,7 +150,7 @@ func (s *Store) LRange(key string, start, stop int) ([]string, error) {
 
 	result := make([]string, stop-start+1)
 	copy(result, list[start:stop+1])
-	return result, nil 
+	return result, nil
 }
 
 // isExpiredLocked checks expiry. Must be called with at least RLock held
@@ -293,8 +293,9 @@ func (s *Store) Exists(key string) bool {
 	if s.isExpiredLocked(key) {
 		return false
 	}
-	_, ok := s.data[key]
-	return ok
+	_, inData := s.data[key]
+	_, inLists := s.lists[key]
+	return inData || inLists
 }
 
 func (s *Store) Keys(pattern string) []string {
@@ -381,4 +382,46 @@ func (s *Store) Append(key, suffix string) int {
 	defer s.mu.Unlock()
 	s.data[key] = s.data[key] + suffix
 	return len(s.data[key])
+}
+
+func (s *Store) TakeSnapshot() (map[string]string,
+	map[string]time.Time, map[string][]string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	data := make(map[string]string, len(s.data))
+	for k, v := range s.data {
+		data[k] = v
+	}
+
+	expires := make(map[string]time.Time, len(s.expires))
+	for k, v := range s.expires {
+		expires[k] = v
+	}
+
+	lists := make(map[string][]string, len(s.lists))
+	for k, v := range s.lists {
+		cp := make([]string, len(v))
+		copy(cp, v)
+		lists[k] = cp
+	}
+
+	return data, expires, lists
+}
+
+func (s *Store) RestoreSnapshot(data map[string]string, expires map[string]time.Time, lists map[string][]string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for k, v := range data {
+		s.data[k] = v 
+	}
+
+	for k, v := range expires {
+		s.expires[k] = v
+	}
+
+	for k, v := range lists {
+		s.lists[k] = v
+	}
 }

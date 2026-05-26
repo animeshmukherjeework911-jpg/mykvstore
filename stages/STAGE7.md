@@ -4,6 +4,12 @@ Redis is not just a string store — it supports multiple data types. In this st
 
 ---
 
+## Implementation Status — COMPLETE
+
+All list operations are implemented in `internal/store/store.go` and `internal/handler/handler.go`. The `Del` method in `store.go` also handles list keys — it deletes from both `data` and `lists` maps and returns true if either existed.
+
+---
+
 ## Sub-step A — Design decisions
 
 Go does not have a built-in deque. You will use a `[]string` slice:

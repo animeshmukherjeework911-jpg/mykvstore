@@ -4,6 +4,12 @@ The raw echo server from Stage 1 has no concept of commands. In this stage you a
 
 ---
 
+## Implementation Status — SUPERSEDED
+
+This stage has been superseded by Stage 3 (full RESP parser). The current codebase in `internal/resp/resp.go` supports both inline and array format via `ReadCommand`, making the `bufio.Scanner` approach from this stage obsolete. The inline format support is preserved inside `ReadCommand`'s fallback branch.
+
+---
+
 ## Sub-step A — Understand the RESP inline format
 
 RESP supports two command styles. Inline commands are the simpler one: a client sends a line of text, the server splits it on whitespace to get the command name and arguments. For example:
