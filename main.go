@@ -17,17 +17,19 @@ import (
 )
 
 func main() {
-	port := flag.String("port", "6379", "TCP port to listen on")
+	port    := flag.String("port", "6379", "TCP port to listen on")
+	rdbPath := flag.String("rdb", rdb.DefaultRDBPath, "Path to RDB snapshot file")
+	aofPath := flag.String("aof", aof.DefaultAOFPath, "Path to AOF log file")
 	flag.Parse()
 
 	s := store.NewStore()
 
-	rdbSavedAt, err := rdb.LoadRDB(s, rdb.RDBPath)
+	rdbSavedAt, err := rdb.LoadRDB(s, *rdbPath)
 	if err != nil {
 		log.Fatalf("RDB load failed: %v", err)
 	}
 
-	aof, err := aof.OpenAOF(aof.AOF_PATH)
+	aof, err := aof.OpenAOF(*aofPath)
 	if err != nil {
 		log.Fatalf("failed to open AOF: %v", err)
 	}
@@ -37,7 +39,7 @@ func main() {
 		log.Fatalf("AOF replay failed: %v", err)
 	}
 
-	saver := rdb.NewRDBSaver(s, rdb.RDBPath)
+	saver := rdb.NewRDBSaver(s, *rdbPath)
 	saver.Start(60 * time.Second)
 	defer saver.Stop()
 

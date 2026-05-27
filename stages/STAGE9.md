@@ -175,7 +175,7 @@ func NewRDBSaver(s *store.Store, path string) *RDBSaver {
 	return &RDBSaver{
 		store:  s,
 		path:   path,
-		saveCh: make(chan struct{}),
+		saveCh: make(chan struct{}, 1),
 		stopCh: make(chan struct{}),
 	}
 }

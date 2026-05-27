@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const AOF_PATH = "aof/aof.log"
+const DefaultAOFPath = "aof/aof.log"
 
 // AOF handles append-only file persistence
 type AOF struct {

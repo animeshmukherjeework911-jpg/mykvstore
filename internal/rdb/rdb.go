@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const RDBPath = "dump.rdb"
+const DefaultRDBPath = "dump.rdb"
 
 type Snapshot struct {
 	Data    map[string]string
@@ -19,7 +19,7 @@ type Snapshot struct {
 	SavedAt time.Time
 }
 
-func saveRDB(s *store.Store, path string) error {
+func SaveRDB(s *store.Store, path string) error {
 	tmp := path + ".tmp"
 	f, err := os.Create(tmp)
 	if err != nil {
@@ -88,7 +88,7 @@ func NewRDBSaver(s *store.Store, path string) *RDBSaver {
 	return &RDBSaver{
 		store:  s,
 		path:   path,
-		saveCh: make(chan struct{}),
+		saveCh: make(chan struct{}, 1),
 		stopCh: make(chan struct{}),
 	}
 }
@@ -137,7 +137,7 @@ func (r *RDBSaver) Stop() {
 
 func (r *RDBSaver) save(reason string) {
 	start := time.Now()
-	if err := saveRDB(r.store, r.path); err != nil {
+	if err := SaveRDB(r.store, r.path); err != nil {
 		log.Printf("RDB save (%s) failed: %v", reason, err)
 		return
 	}
