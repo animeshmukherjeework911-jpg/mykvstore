@@ -8,7 +8,11 @@ In this final stage you implement the Redis Pub/Sub messaging model. Clients can
 
 No Pub/Sub code exists in the codebase. Stage 9 (RDB) must be completed first.
 
-When implementing, note that the project now uses the `internal/` package structure. The `PubSub` type described below should go in `internal/pubsub/pubsub.go` (package `pubsub`), and the `handleSubscribe` logic should live in `internal/handler/handler.go` or a new `internal/handler/subscribe.go`. The `Dispatch` function signature will need to accept a `*pubsub.PubSub` parameter (and `net.Conn` for the SUBSCRIBE handoff).
+When implementing, note that the project now uses the `internal/` package structure:
+
+- `PubSub` type → `internal/pubsub/pubsub.go` (package `pubsub`). This file already exists.
+- `handleSubscribe` function → `internal/handler/handler.go` (package `handler`). Place it alongside the existing `Dispatch` function in that file. Only move it to a new `internal/handler/subscribe.go` if `handler.go` grows unwieldy.
+- `Dispatch` function signature must be updated to accept `net.Conn` (so it can hand off to `handleSubscribe`) and `*pubsub.PubSub` (for PUBLISH and SUBSCRIBE).
 
 ---
 
@@ -134,14 +138,15 @@ import (
 )
 
 // handleSubscribe enters subscribe mode for conn. channels is the initial list.
-// It loops reading new SUBSCRIBE/UNSUBSCRIBE commands and forwarding messages.
-func handleSubscribe(conn net.Conn, ps *PubSub, channels []string) {
+// r is the bufio.Reader already created by handleConn — pass it in rather than
+// creating a new one, or buffered bytes already read from the conn will be lost.
+func handleSubscribe(conn net.Conn, r *bufio.Reader, ps *PubSub, channels []string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	type subEntry struct {
-		ch  chan string
-		id  uint64
+		ch   chan string
+		id   uint64
 		name string
 	}
 
@@ -156,18 +161,19 @@ func handleSubscribe(conn net.Conn, ps *PubSub, channels []string) {
 			ch, id := ps.Subscribe(name)
 			active[name] = subEntry{ch: ch, id: id, name: name}
 			// Send subscription confirmation.
-			resp := encodeSubscribeMessage("subscribe", name, len(active))
-			conn.Write([]byte(resp))
+			// Use a local variable name that does not shadow the resp package.
+			confirmation := encodeSubscribeMessage("subscribe", name, len(active))
+			conn.Write([]byte(confirmation))
 
 			// Start a forwarder goroutine for this channel.
 			go func(entry subEntry) {
 				for {
 					select {
-					case msg, ok := <-entry.ch:
+					case payload, ok := <-entry.ch:
 						if !ok {
 							return // Channel was closed by Unsubscribe.
 						}
-						fwd := encodeMessageNotification(entry.name, msg)
+						fwd := encodeMessageNotification(entry.name, payload)
 						conn.Write([]byte(fwd))
 					case <-ctx.Done():
 						return
@@ -180,11 +186,8 @@ func handleSubscribe(conn net.Conn, ps *PubSub, channels []string) {
 	subscribeToChannels(channels)
 
 	// Read further commands from this connection (only SUBSCRIBE/UNSUBSCRIBE/PING).
-	// We re-use a simple line reader here for brevity; in production you would
-	// re-use the bufio.Reader from the outer loop.
-	import_bufio_reader := newConnReader(conn)
 	for {
-		parts, err := readCommand(import_bufio_reader)
+		parts, err := readCommand(r)
 		if err != nil {
 			break // Client disconnected.
 		}
@@ -200,8 +203,8 @@ func handleSubscribe(conn net.Conn, ps *PubSub, channels []string) {
 				if entry, ok := active[name]; ok {
 					ps.Unsubscribe(name, entry.id)
 					delete(active, name)
-					resp := encodeSubscribeMessage("unsubscribe", name, len(active))
-					conn.Write([]byte(resp))
+					notification := encodeSubscribeMessage("unsubscribe", name, len(active))
+					conn.Write([]byte(notification))
 				}
 			}
 			if len(active) == 0 {
@@ -220,7 +223,7 @@ func handleSubscribe(conn net.Conn, ps *PubSub, channels []string) {
 }
 ```
 
-Note: `newConnReader` is a wrapper that returns a `*bufio.Reader` for `conn`. In practice you pass the existing `bufio.Reader` from `handleConn` into `handleSubscribe` rather than creating a new one.
+**Note on the `bufio.Reader`:** There is no `newConnReader` helper. Pass the `*bufio.Reader` that `handleConn` already created (`r := bufio.NewReader(conn)`) directly into `handleSubscribe`. Creating a second `bufio.Reader` on the same `conn` would silently lose any bytes already buffered by the first reader — a subtle bug that only shows up when commands arrive back-to-back.
 
 ---
 
@@ -265,7 +268,7 @@ case "SUBSCRIBE":
 	}
 	// Hand off to subscribe mode — this function does not return until
 	// the client unsubscribes or disconnects.
-	handleSubscribe(conn, ps, args)
+	handleSubscribe(conn, r, ps, args)
 	return "" // Response already sent inside handleSubscribe.
 
 case "PUBLISH":
@@ -276,10 +279,10 @@ case "PUBLISH":
 	return encodeInteger(int64(n))
 ```
 
-Because `SUBSCRIBE` transfers control to `handleSubscribe`, the `dispatch` function needs access to `conn`. Update its signature:
+Because `SUBSCRIBE` transfers control to `handleSubscribe`, the `dispatch` function needs access to both `conn` and the existing `*bufio.Reader`. Update its signature:
 
 ```go
-func dispatch(conn net.Conn, parts []string, store *Store, aof *AOF, saver *RDBSaver, ps *PubSub) string
+func dispatch(conn net.Conn, r *bufio.Reader, parts []string, store *Store, aof *AOF, saver *RDBSaver, ps *PubSub) string
 ```
 
 ---
@@ -315,7 +318,7 @@ func handleConn(conn net.Conn, store *Store, aof *AOF, saver *RDBSaver, ps *PubS
 		if len(parts) == 0 {
 			continue
 		}
-		response := dispatch(conn, parts, store, aof, saver, ps)
+		response := dispatch(conn, r, parts, store, aof, saver, ps)
 		if response != "" {
 			conn.Write([]byte(response))
 		}

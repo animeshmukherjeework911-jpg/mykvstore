@@ -125,3 +125,21 @@ func EncodeArray(items []string) string {
 	}
 	return sb.String()
 }
+
+func EncodeSubscribeMessage(kind, channel string, count int) string {
+	var sb strings.Builder
+	sb.WriteString("*3\r\n")
+	sb.WriteString(EncodeBulkString(kind))
+	sb.WriteString(EncodeBulkString(channel))
+	fmt.Fprintf(&sb, ":%d\r\n", count)
+	return sb.String()
+}
+
+func EncodeMessageNotification(channel, message string) string {
+	var sb strings.Builder
+	sb.WriteString("*3\r\n")
+	sb.WriteString(EncodeBulkString("message"))
+	sb.WriteString(EncodeBulkString(channel))
+	sb.WriteString(EncodeBulkString(message))
+	return sb.String()
+}

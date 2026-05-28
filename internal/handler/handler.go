@@ -1,11 +1,15 @@
 package handler
 
 import (
+	"bufio"
+	"context"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
 
+	"mykvstore/internal/pubsub"
 	"mykvstore/internal/rdb"
 	"mykvstore/internal/resp"
 	"mykvstore/internal/store"
@@ -279,4 +283,86 @@ func Dispatch(parts []string, s *store.Store, saver *rdb.RDBSaver) string {
 	default:
 		return resp.EncodeError(fmt.Sprintf("unknown command '%s'", parts[0]))
 	}
+}
+
+func handleSubscribe(conn net.Conn, r *bufio.Reader, ps *pubsub.PubSub, channels []string) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	type subEntry struct {
+		ch   chan string
+		id   uint64
+		name string
+	}
+
+	active := make(map[string]subEntry)
+
+	subscribeToChannels := func(names []string) {
+		for _, name := range names {
+			if _, already := active[name]; already {
+				continue
+			}
+
+			ch, id := ps.Subscribe(name)
+			active[name] = subEntry{ch: ch, id: id, name: name}
+			msg := resp.EncodeSubscribeMessage("subscribe", name, len(active))
+			conn.Write([]byte(msg))
+
+			go func(entry subEntry) {
+				for {
+					select {
+					case msg, ok := <-entry.ch:
+						if !ok {
+							return
+						}
+						fwd := resp.EncodeMessageNotification(entry.name, msg)
+						conn.Write([]byte(fwd))
+
+					case <-ctx.Done():
+						return
+					}
+				}
+			}(active[name])
+		}
+	}
+
+	subscribeToChannels(channels)
+
+	for {
+		parts, err := resp.ReadCommand(r)
+		if err != nil {
+			break
+		}
+
+		if len(parts) == 0 {
+			continue
+		}
+
+		cmd := strings.ToUpper(parts[0])
+		switch cmd {
+		case "SUBSCRIBE":
+			subscribeToChannels(parts[1:])
+		case "UNSUBSCRIBE":
+			for _, name := range parts[1:] {
+				if entry, ok := active[name]; ok {
+					ps.Unsubscribe(name, entry.id)
+					delete(active, name)
+					msg := resp.EncodeSubscribeMessage("unsubscribe", name, len(active))
+					conn.Write([]byte(msg))
+				}
+			}
+			if len(active) == 0 {
+				return
+			}
+
+		case "PING":
+			conn.Write([]byte("+PONG\r\n"))
+		}
+	}
+
+	cancel()
+	for _, entry := range active {
+		ps.Unsubscribe(entry.name, entry.id)
+	}
+
 }
