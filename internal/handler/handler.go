@@ -276,7 +276,21 @@ func Dispatch(parts []string, s *store.Store, saver *rdb.RDBSaver) string {
 			return resp.EncodeInteger(saver.LastSave().Unix())
 		}
 		return resp.EncodeError("background save disabled")
-
+	
+	case "SUBSCRIBE":
+		if len(args) == 0 {
+			return resp.EncodeError("wrong number of arguments for 'subscribe' command")
+		}
+		handleSubscribe(conn, r, ps, args)
+		return ""
+	
+	case "PUBLISH":
+		if len(args) != 2 {
+			return resp.EncodeError("wrong number of arguments for 'publish' command")
+		}
+		n := pubsub.NewPubSub().Publish(args[0], args[1])
+		return resp.EncodeInteger(int64(n))
+	
 	case "COMMAND":
 		return "*0\r\n"
 
