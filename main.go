@@ -11,18 +11,20 @@ import (
 
 	"mykvstore/internal/aof"
 	"mykvstore/internal/handler"
+	"mykvstore/internal/pubsub"
 	"mykvstore/internal/rdb"
 	"mykvstore/internal/resp"
 	"mykvstore/internal/store"
 )
 
 func main() {
-	port    := flag.String("port", "6379", "TCP port to listen on")
+	port := flag.String("port", "6379", "TCP port to listen on")
 	rdbPath := flag.String("rdb", rdb.DefaultRDBPath, "Path to RDB snapshot file")
 	aofPath := flag.String("aof", aof.DefaultAOFPath, "Path to AOF log file")
 	flag.Parse()
 
 	s := store.NewStore()
+	ps := pubsub.NewPubSub()
 
 	rdbSavedAt, err := rdb.LoadRDB(s, *rdbPath)
 	if err != nil {
@@ -35,7 +37,7 @@ func main() {
 	}
 	defer aof.Close()
 
-	if err := aof.ReplayAfter(s, rdbSavedAt); err != nil {
+	if err := aof.ReplayAfter(func(parts []string) { handler.Dispatch(nil, nil, parts, s, nil, nil) }, rdbSavedAt); err != nil {
 		log.Fatalf("AOF replay failed: %v", err)
 	}
 
@@ -66,11 +68,11 @@ func main() {
 			log.Printf("accept error: %v", err)
 			continue
 		}
-		go handleConn(conn, s, aof, saver)
+		go handleConn(conn, s, aof, saver, ps)
 	}
 }
 
-func handleConn(conn net.Conn, s *store.Store, aof *aof.AOF, saver *rdb.RDBSaver) {
+func handleConn(conn net.Conn, s *store.Store, aof *aof.AOF, saver *rdb.RDBSaver, ps *pubsub.PubSub) {
 	defer conn.Close()
 	r := bufio.NewReader(conn)
 
@@ -83,7 +85,7 @@ func handleConn(conn net.Conn, s *store.Store, aof *aof.AOF, saver *rdb.RDBSaver
 			continue
 		}
 
-		response := handler.Dispatch(parts, s, saver)
+		response := handler.Dispatch(conn, r, parts, s, saver, ps)
 		conn.Write([]byte(response))
 
 		if isWriteCommand(parts[0]) {

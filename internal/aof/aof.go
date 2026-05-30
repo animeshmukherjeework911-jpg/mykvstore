@@ -4,9 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"log"
-	"mykvstore/internal/handler"
 	"mykvstore/internal/resp"
-	"mykvstore/internal/store"
 	"os"
 	"path/filepath"
 	"sync"
@@ -79,10 +77,9 @@ func (a *AOF) Close() error {
 	return a.file.Close()
 }
 
-// Replay reads the AOF from the beginning and re-runs every command
-// through the provided dispatch function to rebuild store state
-
-func (a *AOF) Replay(store *store.Store) error {
+// Replay reads the AOF from the beginning and calls apply for every command.
+// The caller supplies apply — typically a closure over handler.Dispatch.
+func (a *AOF) Replay(apply func([]string)) error {
 	if _, err := a.file.Seek(0, 0); err != nil {
 		return fmt.Errorf("aof seek: %w", err)
 	}
@@ -93,15 +90,12 @@ func (a *AOF) Replay(store *store.Store) error {
 	for {
 		parts, err := resp.ReadCommand(r)
 		if err != nil {
-			// io.EOF is the normal end of the file
 			break
 		}
-
 		if len(parts) == 0 {
 			continue
 		}
-
-		handler.Dispatch(parts, store, nil)
+		apply(parts)
 		replayed++
 	}
 
@@ -113,12 +107,9 @@ func (a *AOF) Replay(store *store.Store) error {
 	return nil
 }
 
-// ReplayAfter replays AOF commands, skipping those recorded before cutoff.
+// ReplayAfter replays AOF commands recorded after cutoff.
 // In this implementation the full AOF is replayed; the RDB already has
 // the canonical state, so re-applying SET/DEL commands is idempotent.
-
-func (a *AOF) ReplayAfter(s *store.Store, cutoff time.Time) error {
-	// If cutoff is zero (no RDB), replay everything.
-	// Otherwise, still replay everything — idempotent commands are safe.
-	return a.Replay(s)
+func (a *AOF) ReplayAfter(apply func([]string), cutoff time.Time) error {
+	return a.Replay(apply)
 }

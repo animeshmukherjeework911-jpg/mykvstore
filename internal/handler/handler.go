@@ -7,6 +7,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"mykvstore/internal/pubsub"
@@ -44,7 +45,7 @@ func incrBy(args []string, cmd string, s *store.Store) string {
 	return resp.EncodeInteger(n)
 }
 
-func Dispatch(parts []string, s *store.Store, saver *rdb.RDBSaver) string {
+func Dispatch(conn net.Conn, r *bufio.Reader, parts []string, s *store.Store, saver *rdb.RDBSaver, ps *pubsub.PubSub) string {
 	cmd := strings.ToUpper(parts[0])
 	args := parts[1:]
 
@@ -276,21 +277,21 @@ func Dispatch(parts []string, s *store.Store, saver *rdb.RDBSaver) string {
 			return resp.EncodeInteger(saver.LastSave().Unix())
 		}
 		return resp.EncodeError("background save disabled")
-	
+
 	case "SUBSCRIBE":
 		if len(args) == 0 {
 			return resp.EncodeError("wrong number of arguments for 'subscribe' command")
 		}
 		handleSubscribe(conn, r, ps, args)
 		return ""
-	
+
 	case "PUBLISH":
 		if len(args) != 2 {
 			return resp.EncodeError("wrong number of arguments for 'publish' command")
 		}
-		n := pubsub.NewPubSub().Publish(args[0], args[1])
+		n := ps.Publish(args[0], args[1])
 		return resp.EncodeInteger(int64(n))
-	
+
 	case "COMMAND":
 		return "*0\r\n"
 
@@ -302,6 +303,13 @@ func Dispatch(parts []string, s *store.Store, saver *rdb.RDBSaver) string {
 func handleSubscribe(conn net.Conn, r *bufio.Reader, ps *pubsub.PubSub, channels []string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	var mu sync.Mutex
+	write := func(msg string) {
+		mu.Lock()
+		conn.Write([]byte(msg))
+		mu.Unlock()
+	}
 
 	type subEntry struct {
 		ch   chan string
@@ -319,8 +327,7 @@ func handleSubscribe(conn net.Conn, r *bufio.Reader, ps *pubsub.PubSub, channels
 
 			ch, id := ps.Subscribe(name)
 			active[name] = subEntry{ch: ch, id: id, name: name}
-			msg := resp.EncodeSubscribeMessage("subscribe", name, len(active))
-			conn.Write([]byte(msg))
+			write(resp.EncodeSubscribeMessage("subscribe", name, len(active)))
 
 			go func(entry subEntry) {
 				for {
@@ -329,14 +336,22 @@ func handleSubscribe(conn net.Conn, r *bufio.Reader, ps *pubsub.PubSub, channels
 						if !ok {
 							return
 						}
-						fwd := resp.EncodeMessageNotification(entry.name, msg)
-						conn.Write([]byte(fwd))
-
+						write(resp.EncodeMessageNotification(entry.name, msg))
 					case <-ctx.Done():
 						return
 					}
 				}
 			}(active[name])
+		}
+	}
+
+	unsubscribeFrom := func(names []string) {
+		for _, name := range names {
+			if entry, ok := active[name]; ok {
+				ps.Unsubscribe(name, entry.id)
+				delete(active, name)
+				write(resp.EncodeSubscribeMessage("unsubscribe", name, len(active)))
+			}
 		}
 	}
 
@@ -347,7 +362,6 @@ func handleSubscribe(conn net.Conn, r *bufio.Reader, ps *pubsub.PubSub, channels
 		if err != nil {
 			break
 		}
-
 		if len(parts) == 0 {
 			continue
 		}
@@ -357,20 +371,19 @@ func handleSubscribe(conn net.Conn, r *bufio.Reader, ps *pubsub.PubSub, channels
 		case "SUBSCRIBE":
 			subscribeToChannels(parts[1:])
 		case "UNSUBSCRIBE":
-			for _, name := range parts[1:] {
-				if entry, ok := active[name]; ok {
-					ps.Unsubscribe(name, entry.id)
-					delete(active, name)
-					msg := resp.EncodeSubscribeMessage("unsubscribe", name, len(active))
-					conn.Write([]byte(msg))
+			// No args means unsubscribe from all, matching Redis behaviour.
+			targets := parts[1:]
+			if len(targets) == 0 {
+				for name := range active {
+					targets = append(targets, name)
 				}
 			}
+			unsubscribeFrom(targets)
 			if len(active) == 0 {
 				return
 			}
-
 		case "PING":
-			conn.Write([]byte("+PONG\r\n"))
+			write("+PONG\r\n")
 		}
 	}
 
@@ -378,5 +391,4 @@ func handleSubscribe(conn net.Conn, r *bufio.Reader, ps *pubsub.PubSub, channels
 	for _, entry := range active {
 		ps.Unsubscribe(entry.name, entry.id)
 	}
-
 }

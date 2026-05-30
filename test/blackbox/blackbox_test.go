@@ -607,3 +607,208 @@ func TestReadOnlyCommandsNotPersisted_Stage8(t *testing.T) {
 		t.Fatalf("k after restart: want v, got %q err=%v", v, err)
 	}
 }
+
+// Stage 6 — missing DECRBY
+
+func TestDecrBy_Stage6(t *testing.T) {
+	rdb := newClient(t)
+	flush(t, rdb)
+
+	rdb.Set(ctx, "counter", "10", 0)
+	n, err := rdb.DecrBy(ctx, "counter", 3).Result()
+	if err != nil || n != 7 {
+		t.Fatalf("DECRBY: want 7, got %d err=%v", n, err)
+	}
+}
+
+// Stage 9 — RDB: BGSAVE / LASTSAVE
+
+func TestBGSave_Stage9(t *testing.T) {
+	rdb := newClient(t)
+	err := rdb.Do(ctx, "BGSAVE").Err()
+	if err != nil {
+		t.Fatalf("BGSAVE: unexpected error: %v", err)
+	}
+}
+
+func TestLastSave_Stage9(t *testing.T) {
+	rdb := newClient(t)
+	// LASTSAVE returns a Unix timestamp; it must be a positive integer.
+	ts, err := rdb.Do(ctx, "LASTSAVE").Int64()
+	if err != nil || ts <= 0 {
+		t.Fatalf("LASTSAVE: want positive timestamp, got %d err=%v", ts, err)
+	}
+}
+
+// Stage 10 — Pub/Sub: SUBSCRIBE / PUBLISH / UNSUBSCRIBE
+//
+// go-redis v9's ReceiveMessage skips subscription confirmations and blocks
+// until an actual "message" arrives. The correct pattern is:
+//   1. ps.Receive(ctx)      — consume the subscription confirmation
+//   2. goroutine calling ps.ReceiveMessage(ctx) — wait for the real message
+//   3. pub.Publish(...)     — trigger delivery from the main goroutine
+//   4. select on goroutine result with a timeout
+
+func pubSubReceive(t *testing.T, ps *redis.PubSub) <-chan *redis.Message {
+	t.Helper()
+	ch := make(chan *redis.Message, 1)
+	go func() {
+		msg, err := ps.ReceiveMessage(context.Background())
+		if err == nil {
+			ch <- msg
+		}
+	}()
+	return ch
+}
+
+func TestPubSubBasic_Stage10(t *testing.T) {
+	// Use the test name as the channel to avoid interference from stale
+	// subscriptions left by a previous test run that was forcibly killed.
+	channel := t.Name()
+	sub := newClient(t)
+	pub := newClient(t)
+
+	ps := sub.Subscribe(ctx, channel)
+	defer ps.Close()
+
+	// ps.Receive blocks until the subscription confirmation arrives.
+	if _, err := ps.Receive(ctx); err != nil {
+		t.Fatalf("subscribe confirmation: %v", err)
+	}
+
+	// Arm the receiver goroutine before publishing to avoid the race where
+	// the message arrives before ReceiveMessage is called.
+	received := pubSubReceive(t, ps)
+
+	n, err := pub.Publish(ctx, channel, "hello").Result()
+	if err != nil || n != 1 {
+		t.Fatalf("PUBLISH: want 1 receiver, got %d err=%v", n, err)
+	}
+
+	select {
+	case msg := <-received:
+		if msg.Channel != channel || msg.Payload != "hello" {
+			t.Fatalf("message: want {%s,hello}, got {%q,%q}", channel, msg.Channel, msg.Payload)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for message")
+	}
+}
+
+func TestPubSubNoSubscribers_Stage10(t *testing.T) {
+	pub := newClient(t)
+	n, err := pub.Publish(ctx, "emptychannel", "msg").Result()
+	if err != nil || n != 0 {
+		t.Fatalf("PUBLISH to empty channel: want 0, got %d err=%v", n, err)
+	}
+}
+
+func TestPubSubMultipleSubscribers_Stage10(t *testing.T) {
+	channel := t.Name()
+	sub1 := newClient(t)
+	sub2 := newClient(t)
+	pub := newClient(t)
+
+	ps1 := sub1.Subscribe(ctx, channel)
+	defer ps1.Close()
+	ps2 := sub2.Subscribe(ctx, channel)
+	defer ps2.Close()
+
+	// Wait for both subscription confirmations before arming receivers.
+	if _, err := ps1.Receive(ctx); err != nil {
+		t.Fatalf("sub1 confirm: %v", err)
+	}
+	if _, err := ps2.Receive(ctx); err != nil {
+		t.Fatalf("sub2 confirm: %v", err)
+	}
+
+	r1 := pubSubReceive(t, ps1)
+	r2 := pubSubReceive(t, ps2)
+
+	n, err := pub.Publish(ctx, channel, "goal").Result()
+	if err != nil || n != 2 {
+		t.Fatalf("PUBLISH to 2 subscribers: want 2, got %d err=%v", n, err)
+	}
+
+	timeout := time.After(5 * time.Second)
+	for _, ch := range []<-chan *redis.Message{r1, r2} {
+		select {
+		case msg := <-ch:
+			if msg.Payload != "goal" {
+				t.Fatalf("subscriber: want payload=goal, got %q", msg.Payload)
+			}
+		case <-timeout:
+			t.Fatal("timed out waiting for subscriber")
+		}
+	}
+}
+
+func TestPubSubMultipleChannels_Stage10(t *testing.T) {
+	ch1 := t.Name() + ":1"
+	ch2 := t.Name() + ":2"
+	sub := newClient(t)
+	pub := newClient(t)
+
+	ps := sub.Subscribe(ctx, ch1, ch2)
+	defer ps.Close()
+
+	// Consume both subscription confirmations before arming the receiver.
+	for range 2 {
+		if _, err := ps.Receive(ctx); err != nil {
+			t.Fatalf("channel confirm: %v", err)
+		}
+	}
+
+	msgs := make(chan *redis.Message, 2)
+	go func() {
+		for range 2 {
+			msg, err := ps.ReceiveMessage(context.Background())
+			if err == nil {
+				msgs <- msg
+			}
+		}
+	}()
+
+	pub.Publish(ctx, ch1, "one")
+	pub.Publish(ctx, ch2, "two")
+
+	received := map[string]string{}
+	timeout := time.After(5 * time.Second)
+	for range 2 {
+		select {
+		case msg := <-msgs:
+			received[msg.Channel] = msg.Payload
+		case <-timeout:
+			t.Fatal("timed out waiting for messages")
+		}
+	}
+	if received[ch1] != "one" || received[ch2] != "two" {
+		t.Fatalf("wrong messages: %v", received)
+	}
+}
+
+func TestPubSubUnsubscribe_Stage10(t *testing.T) {
+	channel := t.Name()
+	sub := newClient(t)
+	pub := newClient(t)
+
+	ps := sub.Subscribe(ctx, channel)
+	defer ps.Close()
+
+	// Confirm subscription.
+	if _, err := ps.Receive(ctx); err != nil {
+		t.Fatalf("subscribe confirm: %v", err)
+	}
+
+	// Unsubscribe and consume the unsubscribe confirmation.
+	ps.Unsubscribe(ctx, channel)
+	ps.Receive(ctx)
+
+	// Give the server time to process the unsubscription.
+	time.Sleep(50 * time.Millisecond)
+
+	n, err := pub.Publish(ctx, channel, "late").Result()
+	if err != nil || n != 0 {
+		t.Fatalf("PUBLISH after unsubscribe: want 0 receivers, got %d err=%v", n, err)
+	}
+}

@@ -5,8 +5,13 @@ import (
 	"testing"
 
 	"mykvstore/internal/aof"
+	"mykvstore/internal/handler"
 	"mykvstore/internal/store"
 )
+
+func replayApply(s *store.Store) func([]string) {
+	return func(parts []string) { handler.Dispatch(nil, nil, parts, s, nil, nil) }
+}
 
 func tempAOFPath(t *testing.T) string {
 	t.Helper()
@@ -19,7 +24,7 @@ func TestAOFReplayEmpty(t *testing.T) {
 		t.Fatalf("OpenAOF: %v", err)
 	}
 	defer a.Close()
-	if err := a.Replay(store.NewStore()); err != nil {
+	if err := a.Replay(replayApply(store.NewStore())); err != nil {
 		t.Fatalf("Replay empty AOF: %v", err)
 	}
 }
@@ -35,7 +40,7 @@ func TestAOFReplaySet(t *testing.T) {
 	a2, _ := aof.OpenAOF(path)
 	defer a2.Close()
 	s := store.NewStore()
-	if err := a2.Replay(s); err != nil {
+	if err := a2.Replay(replayApply(s)); err != nil {
 		t.Fatalf("Replay: %v", err)
 	}
 
@@ -57,7 +62,7 @@ func TestAOFReplayList(t *testing.T) {
 	a2, _ := aof.OpenAOF(path)
 	defer a2.Close()
 	s := store.NewStore()
-	a2.Replay(s)
+	a2.Replay(replayApply(s))
 
 	items, err := s.LRange("mylist", 0, -1)
 	if err != nil || len(items) != 3 || items[0] != "x" || items[2] != "z" {
@@ -77,7 +82,7 @@ func TestAOFReplayIncr(t *testing.T) {
 	a2, _ := aof.OpenAOF(path)
 	defer a2.Close()
 	s := store.NewStore()
-	a2.Replay(s)
+	a2.Replay(replayApply(s))
 
 	if v, ok := s.Get("counter"); !ok || v != "2" {
 		t.Fatalf("counter: want 2, got %q ok=%v", v, ok)
@@ -95,7 +100,7 @@ func TestAOFReplayDel(t *testing.T) {
 	a2, _ := aof.OpenAOF(path)
 	defer a2.Close()
 	s := store.NewStore()
-	a2.Replay(s)
+	a2.Replay(replayApply(s))
 
 	if _, ok := s.Get("k"); ok {
 		t.Fatal("k should be absent after DEL replay")
@@ -118,7 +123,7 @@ func TestAOFAppendAcrossReopens(t *testing.T) {
 	a3, _ := aof.OpenAOF(path)
 	defer a3.Close()
 	s := store.NewStore()
-	a3.Replay(s)
+	a3.Replay(replayApply(s))
 
 	if v, ok := s.Get("a"); !ok || v != "1" {
 		t.Fatalf("a: want 1, got %q ok=%v", v, ok)
